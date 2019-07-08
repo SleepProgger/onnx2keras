@@ -132,7 +132,7 @@ def convert_reduce_mean(node, params, layers, node_name):
 
     def target_layer(x, axis=axis, keepdims=keepdims):
         import keras.backend as K
-        return K.mean(x, keepdims=(keepdims == 1), axis=axis)
+        return K.mean(x, keepdims=keepdims, axis=axis)
 
     lambda_layer = keras.layers.Lambda(
         target_layer, name=node_name,
