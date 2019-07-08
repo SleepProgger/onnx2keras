@@ -1,6 +1,7 @@
 import keras.layers
+import keras.backend as K
 import logging
-from .utils import ensure_tf_type
+from .utils import ensure_tf_type, get_same_lambda_shape
 
 
 def convert_elementwise_div(node, params, layers, node_name):
@@ -22,14 +23,12 @@ def convert_elementwise_div(node, params, layers, node_name):
     input_1 = ensure_tf_type(layers[node.input[1]], layers[list(layers)[0]])
 
     def target_layer(x):
-        import tensorflow as tf
-        layer = tf.div(
-            x[0],
-            x[1]
-        )
-        return layer
+        return x[0] / x[1]
 
-    lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+    lambda_layer = keras.layers.Lambda(
+        target_layer, name=node_name,
+        output_shape=get_same_lambda_shape(input_0)
+    )
     layers[node_name] = lambda_layer([input_0, input_1])
 
 
@@ -50,24 +49,24 @@ def convert_elementwise_add(node, params, layers, node_name):
     logger.debug('Convert inputs to Keras/TF layers if needed.')
     input_0 = ensure_tf_type(layers[node.input[0]], layers[list(layers)[0]])
     input_1 = ensure_tf_type(layers[node.input[1]], layers[list(layers)[0]])
-
+    logger.info("Got types %s, %s", type(input_0), type(input_1))
+    logger.info("Got %s, %s", input_0.shape, input_1.shape)
     try:
         add = keras.layers.Add(name=node_name)
         layers[node_name] = add([input_0, input_1])
-    except IndexError:
-        logger.warning('Failed to use keras.layers.Add. Fallback to TF lambda.')
+    except (IndexError, ValueError):
+        logger.warning('Failed to use keras.layers.Add. Fallback to K lambda.')
         # Doesn't work with constants
         # IndexError: tuple index out of range
+        # ValueErrorr: ...
 
         def target_layer(x):
-            import tensorflow as tf
-            layer = tf.add(
-                x[0],
-                x[1]
-            )
-            return layer
-
-        lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+            return x[0] + x[1]
+ 
+        lambda_layer = keras.layers.Lambda(
+            target_layer, name=node_name,
+            output_shape=get_same_lambda_shape(input_0)
+        )
         layers[node_name] = lambda_layer([input_0, input_1])
 
 
@@ -92,21 +91,19 @@ def convert_elementwise_mul(node, params, layers, node_name):
     try:
         mul = keras.layers.Multiply(name=node_name)
         layers[node_name] = mul([input_0, input_1])
-    except IndexError:
-        logger.warning('Failed to use keras.layers.Multiply. Fallback to TF lambda.')
+    except (IndexError, ValueError):
+        logger.warning('Failed to use keras.layers.Multiply. Fallback to K lambda.')
 
         # Doesn't work with constants
         # IndexError: tuple index out of range
 
         def target_layer(x):
-            import tensorflow as tf
-            layer = tf.multiply(
-                x[0],
-                x[1]
-            )
-            return layer
+            return x[0] * x[1]
 
-        lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+        lambda_layer = keras.layers.Lambda(
+            target_layer, name=node_name,
+            output_shape=get_same_lambda_shape(input_0)
+        )
         layers[node_name] = lambda_layer([input_0, input_1])
 
 
@@ -131,19 +128,17 @@ def convert_elementwise_sub(node, params, layers, node_name):
     try:
         sub = keras.layers.Subtract(name=node_name)
         layers[node_name] = sub([input_0, input_1])
-    except IndexError:
-        logger.warning('Failed to use keras.layers.Subtract. Fallback to TF lambda.')
+    except (IndexError, ValueError):
+        logger.warning('Failed to use keras.layers.Subtract. Fallback to K lambda.')
 
         # Doesn't work with constants
         # IndexError: tuple index out of range
 
         def target_layer(x):
-            import tensorflow as tf
-            layer = tf.subtract(
-                x[0],
-                x[1]
-            )
-            return layer
+            return x[0] - x[1]
 
-        lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+        lambda_layer = keras.layers.Lambda(
+            target_layer, name=node_name,
+            output_shape=get_same_lambda_shape(input_0)
+        )
         layers[node_name] = lambda_layer([input_0, input_1])

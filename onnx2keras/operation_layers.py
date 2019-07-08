@@ -1,8 +1,7 @@
 import keras.layers
 import keras.backend as K
 import logging
-from .utils import ensure_tf_type, ensure_numpy_type
-from collections.abc import Iterable
+from .utils import ensure_tf_type, ensure_numpy_type, get_same_lambda_shape, get_reduce_lambda_shape
 
 
 def convert_clip(node, params, layers, node_name):
@@ -25,9 +24,12 @@ def convert_clip(node, params, layers, node_name):
         layer = keras.layers.ReLU(max_value=params['max'], name=node_name)
     else:
         def target_layer(x, vmin=params['min'], vmax=params['max']):
-            import tensorflow as tf
-            return tf.clip_by_value(x, vmin, vmax)
-        layer = keras.layers.Lambda(target_layer, name=node_name)
+            import keras.backend as K
+            return K.clip(x, vmin, vmax)
+        lambda_layer = keras.layers.Lambda(
+            target_layer, name=node_name,
+            output_shape=get_same_lambda_shape(input_0)
+        )
 
     layers[node_name] = layer(input_0)
 
@@ -50,7 +52,10 @@ def convert_log(node, params, layers, node_name):
         import keras.backend as K
         return K.log(x)
 
-    lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+    lambda_layer = keras.layers.Lambda(
+        target_layer, name=node_name,
+        output_shape=get_same_lambda_shape(input_0)
+    )
     layers[node_name] = lambda_layer(input_0)
 
 
@@ -72,7 +77,10 @@ def convert_exp(node, params, layers, node_name):
         import keras.backend as K
         return K.exp(x)
 
-    lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+    lambda_layer = keras.layers.Lambda(
+        target_layer, name=node_name,
+        output_shape=get_same_lambda_shape(input_0)
+    )
     layers[node_name] = lambda_layer(input_0)
 
 
@@ -91,14 +99,18 @@ def convert_reduce_sum(node, params, layers, node_name):
     input_0 = ensure_tf_type(layers[node.input[0]])
 
     axis = params['axes']
+    keepdims = bool(params.get("keepdims", 1))
 
-    def target_layer(x, axis=axis):
+    def target_layer(x, axis=axis, keepdims=keepdims):
         import keras.backend as K
-        return K.sum(x, keepdims=True, axis=axis)
+        return K.sum(x, keepdims=bool(keepdims), axis=axis)
 
-    lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+    lambda_layer = keras.layers.Lambda(
+        target_layer, name=node_name,
+        output_shape=get_reduce_lambda_shape(input_0, axis, keepdims)
+    )
     layers[node_name] = lambda_layer(input_0)
-    layers[node_name].set_shape(layers[node_name]._keras_shape)
+    #layers[node_name].set_shape(layers[node_name]._keras_shape)
 
 
 def convert_reduce_mean(node, params, layers, node_name):
@@ -115,13 +127,19 @@ def convert_reduce_mean(node, params, layers, node_name):
 
     input_0 = ensure_tf_type(layers[node.input[0]])
 
-    def target_layer(x, axis=params['axes'], keepdims=params['keepdims']):
+    axis = params['axes']
+    keepdims = bool(params.get("keepdims", 1))
+
+    def target_layer(x, axis=axis, keepdims=keepdims):
         import keras.backend as K
         return K.mean(x, keepdims=(keepdims == 1), axis=axis)
 
-    lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+    lambda_layer = keras.layers.Lambda(
+        target_layer, name=node_name,
+        output_shape=get_reduce_lambda_shape(input_0, axis, keepdims)
+    )
     layers[node_name] = lambda_layer(input_0)
-    layers[node_name].set_shape(layers[node_name]._keras_shape)
+    #layers[node_name].set_shape(layers[node_name]._keras_shape)
 
 
 def convert_pow(node, params, layers, node_name):
@@ -143,7 +161,10 @@ def convert_pow(node, params, layers, node_name):
         import keras.backend as K
         return K.pow(x, a)
 
-    lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+    lambda_layer = keras.layers.Lambda(
+        target_layer, name=node_name,
+        output_shape=get_same_lambda_shape(input_0)
+    )
     layers[node_name] = lambda_layer(input_0)
 
 
@@ -165,7 +186,10 @@ def convert_sqrt(node, params, layers, node_name):
         import keras.backend as K
         return K.sqrt(x)
 
-    lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+    lambda_layer = keras.layers.Lambda(
+        target_layer, name=node_name,
+        output_shape=get_same_lambda_shape(input_0)
+    )
     layers[node_name] = lambda_layer(input_0)
 
 
@@ -184,7 +208,7 @@ def convert_split(node, params, layers, node_name):
     input_0 = ensure_tf_type(layers[node.input[0]])
     splits = params["split"]
     axis = params.get("axis", 0)
-    if not isinstance(splits, Iterable):
+    if isinstance(splits, int):
         # This might not work if `split` is a tensor.
         chunk_size = K.int_size(input_0)[axis] // splits
         splits = (chunk_size,) * splits

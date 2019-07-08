@@ -1,6 +1,6 @@
 import numpy as np
 import keras
-
+import keras.backend as K
 
 def is_numpy(obj):
     """
@@ -23,6 +23,21 @@ def ensure_numpy_type(obj):
         raise AttributeError('Not a numpy type.')
 
 
+def get_same_lambda_shape(inp):
+    return K.int_shape(inp)[1:]
+
+
+def get_reduce_lambda_shape(inp, axis, keepdims=False):
+    shape = list(K.int_shape(inp))
+    if keepdims:
+        return K.int_shape(inp)[1:]
+    axis = [axis] if isinstance(int) else axis
+    for ax in axis:
+        shape[ax] = 1
+    return tuple(shape[1:])
+
+
+_count = 0 # TODO: dirty
 def ensure_tf_type(obj, fake_input_layer=None):
     """
     Convert to Keras Constant if needed
@@ -36,12 +51,17 @@ def ensure_tf_type(obj, fake_input_layer=None):
 
         def target_layer(_, inp=obj, dtype=obj.dtype.name):
             import numpy as np
-            import tensorflow as tf
+            import keras.backend as K
             if not isinstance(inp, (np.ndarray, np.generic)):
                 inp = np.array(inp, dtype=dtype)
-            return tf.constant(inp, dtype=inp.dtype, verify_shape=True)
+            return K.constant(inp, dtype=inp.dtype, shape=inp.shape)
 
-        lambda_layer = keras.layers.Lambda(target_layer)
+        global _count
+        # TODO: i am not sure aboutthe output_shape...
+        # This way it has to always contain a dimension for the batches or be a scalar
+        # ... but it seems to work
+        lambda_layer = keras.layers.Lambda(target_layer, output_shape=obj.shape[1:], name="constant_%i" % _count)
+        _count += 1
         return lambda_layer(fake_input_layer)
     else:
         return obj

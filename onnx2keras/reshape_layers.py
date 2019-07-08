@@ -1,4 +1,5 @@
 import keras.layers
+import keras.backend as K
 import numpy as np
 import logging
 from .utils import is_numpy, ensure_tf_type
@@ -39,7 +40,7 @@ def convert_shape(node, params, layers, node_name):
     """
     logger = logging.getLogger('onnx2keras:shape')
     input_0 = ensure_tf_type(layers[node.input[0]], layers[list(layers)[0]])
-    
+
     logger.debug('Actual result:')
     logger.debug(np.array(input_0._keras_shape))
 
@@ -71,6 +72,7 @@ def convert_gather(node, params, layers, node_name):
         else:
             raise AttributeError('Can\'t gather by axis more than 3.')
     else:
+        # TODO: impl using K.gather... should be simply
         raise AttributeError('Can\'t gather from tf tensor.')
 
 
@@ -86,19 +88,23 @@ def convert_concat(node, params, layers, node_name):
     logger = logging.getLogger('onnx2keras:concat')
 
     if is_numpy(layers[node.input[0]]) and is_numpy(layers[node.input[1]]):
+        # TODO impll. for n
         logger.debug('Concat 2 numpy arrays.')
         layers[node_name] = np.concatenate([layers[node.input[0]], layers[node.input[1]]], axis=params['axis'])
     else:
-        logger.debug('Concat 2 tf tensors.')
-        input_0 = ensure_tf_type(layers[node.input[0]], layers[list(layers)[0]])
-        input_1 = ensure_tf_type(layers[node.input[1]], layers[list(layers)[0]])
+        logger.debug('Concat  tf tensors.')
+        inputs = [ensure_tf_type(layers[x], layers[list(layers)[0]]) for x in node.input]
+        axis =params["axis"]
 
-        def target_layer(x, axis=params['axis']):
-            import tensorflow as tf
-            return tf.concat(x, axis=axis)
+        def target_layer(x, axis=axis):
+            import keras.backend as K
+            return K.concatenate(x, axis=axis)
 
-        lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
-        layers[node_name] = lambda_layer([input_0, input_1])
+        out_shape = list(K.int_shape(inputs[0]))
+        # TODO: doesn't support dynamic values in shape[axis]
+        out_shape[axis] = int(sum([K.int_shape(x)[axis] for x in inputs]))
+        lambda_layer = keras.layers.Lambda(target_layer, output_shape=out_shape, name=node_name)
+        layers[node_name] = lambda_layer(inputs)
 
 
 def convert_reshape(node, params, layers, node_name):
@@ -148,17 +154,29 @@ def convert_unsqueeze(node, params, layers, node_name):
 
     if is_numpy(layers[node.input[0]]):
         logger.debug('Work with numpy types.')
+        # TODO: support multiple axis
         layers[node_name] = np.expand_dims(layers[node.input[0]], params['axes'][0])
     else:
-        if len(params['axes'][0]) != 0:
-            raise AttributeError('Axes is not 0. Cannot unsqueeze')
+        axis = tuple(sorted(params['axes'], reverse=True))
 
-        def target_layer(x):
+        def target_layer(x, axis=axis):
             import keras
-            return keras.backend.expand_dims(x)
+            for ax in axis:
+                x = keras.backend.expand_dims(x, ax)
+            return x
 
-        lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
-        layers[node_name] = lambda_layer(layers[node.input[0]])
+        # According to keras docs All input dimensions need to be fixed....
+        # TODO: test and if true -> change to expand_dims in loop or K.reshape ?
+        # TODO: Reshape ignores first axis (BS), is this ok here ?
+        #lambda_layer = keras.layers.Lambda(target_layer, name=node_name)
+        # layer = lambda_layer(layers[node.input[0]])
+
+        new_shape = list(K.int_shape(node.input[0]))
+        for i in axis: # TODO: verify if this is correct
+            new_shape.insert(i, 1)
+        layer = keras.layers.Reshape(new_shape[1:])
+
+        layers[node_name] = layer
 
 
 def convert_flatten(node, params, layers, node_name):

@@ -120,7 +120,6 @@ def onnx_to_keras(onnx_model, input_names,
         logger.debug('type: %s', node_type)
         logger.debug('node_name: %s', node_name)
         logger.debug('node_params: %s', node_params)
-        logger.debug('...')
 
         logger.debug('Check if all inputs are available:')
         if len(node.input) == 0 and node_type != 'Constant':
@@ -145,6 +144,8 @@ def onnx_to_keras(onnx_model, input_names,
             layers,
             node_name
         )
+        logger.debug("real output_shape: (%s) %s", type(layers[node_name]), layers[node_name].shape)
+        logger.debug('...')
 
     # Check for terminal nodes
     for layer in onnx_outputs:

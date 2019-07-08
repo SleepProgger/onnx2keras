@@ -7,4 +7,5 @@ def convert_constant(node, params, layers, node_name):
     :param node_name: resulting layer name
     :return: None
     """
+    print("CONSTANT: %s %s" % (type(params["value"]), params["value"]))
     layers[node_name] = params['value']
