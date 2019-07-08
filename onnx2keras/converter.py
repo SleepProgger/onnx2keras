@@ -39,7 +39,7 @@ def onnx_node_attributes_to_dict(args):
 
 
 def onnx_to_keras(onnx_model, input_names,
-                  input_shapes=None, name_policy=None, verbose=True, change_ordering=False):
+                  input_shapes=None, name_policy=None, verbose=True, change_ordering=False, pad_digitnames="layer_%s"):
     """
     Convert ONNX graph to Keras model format
     :param onnx_model: loaded ONNX model
@@ -77,6 +77,11 @@ def onnx_to_keras(onnx_model, input_names,
     weights = {}
     for onnx_w in onnx_weights:
         onnx_extracted_weights_name = onnx_w.ListFields()[2][1]
+        if pad_digitnames and onnx_extracted_weights_name[0].isdigit():
+            # Not usre we need this for weights... TODO
+            new_name = pad_digitnames % onnx_extracted_weights_name
+            logger.info("Changing weight name from %s to %s", onnx_extracted_weights_name, new_name)
+            onnx_extracted_weights_name = new_name
         weights[onnx_extracted_weights_name] = numpy_helper.to_array(onnx_w)
 
         logger.debug('Found weight {0} with shape {1}.'.format(
@@ -108,6 +113,13 @@ def onnx_to_keras(onnx_model, input_names,
         node_type = node.op_type
         node_params = onnx_node_attributes_to_dict(node.attribute)
 
+        if pad_digitnames:
+            for i, output in enumerate(node.output):
+                output = str(output)
+                if output[0].isdigit():
+                    logger.info("change ooutput name %s to %s", output, pad_digitnames % output)
+                    node.output[i] = pad_digitnames % output
+
         node_name = str(node.output[0])
 
         if len(node.output) != 1:
@@ -126,6 +138,11 @@ def onnx_to_keras(onnx_model, input_names,
             raise AttributeError('Operation doesn\'t have an input. Aborting.')
 
         for i, node_input in enumerate(node.input):
+            if pad_digitnames and node_input[0].isdigit():
+                logger.info("change input name %s to %s", node_input, pad_digitnames % node_input)
+                node_input = pad_digitnames % node_input
+                node.input[i] = node_input
+            
             logger.debug('Check input %i (name %s).', i, node_input)
             if node_input not in layers:
                 logger.debug('The input not found in layers / model inputs.')
